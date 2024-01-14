@@ -1,7 +1,7 @@
 import telebot
+from file_token import TOKEN
 
 if __name__ == '__main__':
-    TOKEN = "6401312975:AAG4SgyUP-WQTTPaqDyY1jFPg6wSLwGK-r8"
 
     bot = telebot.TeleBot(TOKEN)
 
