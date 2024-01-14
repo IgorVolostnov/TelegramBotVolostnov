@@ -1,6 +1,5 @@
 import requests
 import json
-from APIException import MyCustomError
 
 
 class Currency:
@@ -18,8 +17,8 @@ class Currency:
             if price.status_code == 200:
                 return str('{:.2f}'.format(float(json.loads(price.content)[self.quote]) * self.amount))
             else:
-                raise MyCustomError('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
-        except MyCustomError as e:
+                raise APIException('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
+        except APIException as e:
             print(e)
 
     @property
@@ -32,8 +31,8 @@ class Currency:
             if base in self.arr_currency:
                 self.base = base
             else:
-                raise MyCustomError('Я не знаю такой Валюты...Расскажете мне о ней?')
-        except MyCustomError as e:
+                raise APIException('Я не знаю такой Валюты...Расскажете мне о ней?')
+        except APIException as e:
             print(e)
 
     @property
@@ -46,8 +45,8 @@ class Currency:
             if quote in self.arr_currency:
                 self.quote = quote
             else:
-                raise MyCustomError('Я не знаю такой Валюты...Расскажете мне о ней?')
-        except MyCustomError as e:
+                raise APIException('Я не знаю такой Валюты...Расскажете мне о ней?')
+        except APIException as e:
             print(e)
 
     @property
@@ -69,6 +68,20 @@ class Currency:
     @add_currency.setter
     def add_currency(self, currency):
         self.arr_currency.append(currency)
+
+
+class APIException(Exception):
+    def __init__(self, *args):
+        if args:
+            self.message = args[0]
+        else:
+            self.message = None
+
+    def __str__(self):
+        if self.message:
+            return 'Ниче не поняла..., {0} '.format(self.message)
+        else:
+            return 'Что-то я летаю в облаках, повторите, пожалуйста!'
 
 
 r = Currency()
