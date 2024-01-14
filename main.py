@@ -1,9 +1,11 @@
 import telebot
-from file_token import TOKEN
+from dotenv import load_dotenv
+import os
 
 if __name__ == '__main__':
+    load_dotenv()
 
-    bot = telebot.TeleBot(TOKEN)
+    bot = telebot.TeleBot(os.getenv('TOKEN'))
 
 
     @bot.message_handler(commands=['start'])
