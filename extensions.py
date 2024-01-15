@@ -25,8 +25,8 @@ class BotTelegramCurrency(telebot.TeleBot):
         def show_currency(message):
             whitespace = '\n'
             list_currency = []
-            for key in self.data.arr_currency.keys():
-                list_currency.append(key)
+            for value in self.data.arr_currency.values():
+                list_currency.append(value)
             self.reply_to(message, f"Я умею считать следующие валюты:{whitespace}"
                                    f"{whitespace.join(list_currency)}")
 
@@ -37,7 +37,6 @@ class BotTelegramCurrency(telebot.TeleBot):
                 self.data.set_base = list_info[0]
                 self.data.set_quote = list_info[1]
                 self.data.set_amount = list_info[2]
-                print(self.data.base, self.data.quote, self.data.amount)
                 self.reply_to(message, f"{self.data.get_price}")
 
     def run(self):
