@@ -1,6 +1,7 @@
 import telebot
 import requests
 import json
+import re
 
 
 class BotTelegramCurrency(telebot.TeleBot):
@@ -12,7 +13,7 @@ class BotTelegramCurrency(telebot.TeleBot):
         @self.message_handler(commands=['start', 'help'])
         def send_welcome(message):
             whitespace = '\n'
-            self.reply_to(message, f"Привет, {message.from_user.first_name}, меня зовут Анжела! "
+            self.reply_to(message, f"Привет, {message.from_user.first_name}, меня зовут Виктор Россвикович! "
                                    f"Я умею считать курсы валют! Для этого напиши мне сообщение в виде:{whitespace}"
                                    f"<имя валюты, цену которой ты хочет узнать><пробел>{whitespace}"
                                    f"<имя валюты, в которой надо узнать цену первой валюты><пробел>{whitespace}"
@@ -24,20 +25,20 @@ class BotTelegramCurrency(telebot.TeleBot):
         def show_currency(message):
             whitespace = '\n'
             list_currency = []
-            for dict_ in self.data.arr_currency:
-                for key in dict_.keys():
-                    list_currency.append(dict_[key])
+            for key in self.data.arr_currency.keys():
+                list_currency.append(key)
             self.reply_to(message, f"Я умею считать следующие валюты:{whitespace}"
                                    f"{whitespace.join(list_currency)}")
 
         @self.message_handler(content_types=['text', ])
         def send_price(message: telebot.types.Message):
             list_info = message.text.strip().split()
-            self.data.set_base = list_info[0]
-            self.data.set_quote = list_info[1]
-            self.data.set_amount = list_info[2]
-            print(self.data.base, self.data.quote, self.data.amount)
-            self.reply_to(message, f"{self.data.get_price}")
+            if len(list_info) == 3 and list_info[2].isdigit():
+                self.data.set_base = list_info[0]
+                self.data.set_quote = list_info[1]
+                self.data.set_amount = list_info[2]
+                print(self.data.base, self.data.quote, self.data.amount)
+                self.reply_to(message, f"{self.data.get_price}")
 
     def run(self):
         self.polling(none_stop=True)
@@ -49,16 +50,27 @@ class Currency:
         self.base = None
         self.quote = None
         self.amount = 1
-        self.arr_currency = [{'RUB': 'Рубль'}, {'USD': 'Доллар'}, {'EUR': 'Евро'}, {'BTC': 'Биткоин'}]
+        self.arr_currency = {'RUB': 'РУБЛЬ', 'USD': 'ДОЛЛАР', 'EUR': 'ЕВРО', 'BTC': 'БИТКОИН'}
+        self.error = []
 
     @property
     def get_price(self):
         try:
-            price = requests.get(f'https://min-api.cryptocompare.com/data/price?fsym={self.base}&tsyms={self.quote}')
-            if price.status_code == 200:
-                return str('{:.2f}'.format(float(json.loads(price.content)[self.quote]) * self.amount))
+            whitespace = '\n'
+            if len(self.error) == 0:
+                price = requests.get(
+                    f'https://min-api.cryptocompare.com/data/price?fsym={self.base}&tsyms={self.quote}')
+                if price.status_code == 200:
+                    answer = f"{str('{:.2f}'.format(float(json.loads(price.content)[self.quote]) * self.amount))} " \
+                             f"{self.quote}"
+                    self.clear()
+                    return answer
+                else:
+                    raise APIException('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
             else:
-                raise APIException('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
+                answer = whitespace.join(self.error)
+                self.clear()
+                return answer
         except APIException as e:
             print(e)
 
@@ -69,14 +81,11 @@ class Currency:
     @set_base.setter
     def set_base(self, base):
         try:
-            for d in self.arr_currency:
-                for currency_id, currency_str in d.items():
-                    if base == currency_str:
-                        self.base = currency_id
-            if self.base is None:
-                raise APIException('Я не знаю такой Валюты...Расскажете мне о ней?')
+            self.base = self.search_key(base)
+            if ''.join(self.base) == '':
+                raise APIException(f'Я не знаю что такое {base}...Расскажете мне об этом?')
         except APIException as e:
-            print(e)
+            self.error.append(str(e))
 
     @property
     def set_quote(self):
@@ -85,14 +94,11 @@ class Currency:
     @set_quote.setter
     def set_quote(self, quote):
         try:
-            for d in self.arr_currency:
-                for currency_id, currency_str in d.items():
-                    if quote == currency_str:
-                        self.quote = currency_id
-            if self.quote is None:
-                raise APIException('Я не знаю такой Валюты...Расскажете мне о ней?')
+            self.quote = self.search_key(quote)
+            if ''.join(self.quote) == '':
+                raise APIException(f'{quote} cтранная какая-то Валюта...Пойду погуглю о ней')
         except APIException as e:
-            print(e)
+            self.error.append(str(e))
 
     @property
     def set_amount(self):
@@ -103,8 +109,19 @@ class Currency:
         try:
             self.amount = int(amount)
         except ValueError as e:
-            print('Я наверное плохо объяснила, как у нас тут всё работает. Сначала валюта, которую переводим, '
-                  'потом в какую переводим, а затем сколько  - в виде ЦЕЛОГО ЧИСЛА)))')
+            self.error.append('Я наверное плохо рассказал, как у нас тут всё работает. Сначала валюта, '
+                              'которую переводим, потом в какую переводим, '
+                              'а затем какое количество в виде ЦЕЛОГО ЧИСЛА)))')
+
+    def search_key(self, search_string):
+        search = re.sub('\W+', '', search_string).upper()
+        return ''.join([key for key, val in self.arr_currency.items() if search in val])
+
+    def clear(self):
+        self.base = None
+        self.quote = None
+        self.amount = 1
+        self.error = []
 
 
 class APIException(Exception):
@@ -116,6 +133,6 @@ class APIException(Exception):
 
     def __str__(self):
         if self.message:
-            return 'Ниче не поняла..., {0} '.format(self.message)
+            return 'Ниче не понял..., {0} '.format(self.message)
         else:
             return 'Что-то я летаю в облаках, повторите, пожалуйста!'
