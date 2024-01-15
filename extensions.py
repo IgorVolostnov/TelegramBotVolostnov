@@ -33,11 +33,11 @@ class BotTelegramCurrency(telebot.TeleBot):
         @self.message_handler(content_types=['text', ])
         def send_price(message: telebot.types.Message):
             list_info = message.text.strip().split()
-            if len(list_info) == 3 and list_info[2].isdigit():
+            if len(list_info) == 3:
                 self.data.set_base = list_info[0]
                 self.data.set_quote = list_info[1]
                 self.data.set_amount = list_info[2]
-                self.reply_to(message, f"{self.data.get_price}")
+                self.reply_to(message, f"{self.data.answer}")
 
     def run(self):
         self.polling(none_stop=True)
@@ -53,25 +53,16 @@ class Currency:
         self.error = []
 
     @property
-    def get_price(self):
-        try:
-            whitespace = '\n'
-            if len(self.error) == 0:
-                price = requests.get(
-                    f'https://min-api.cryptocompare.com/data/price?fsym={self.base}&tsyms={self.quote}')
-                if price.status_code == 200:
-                    answer = f"{str('{:.2f}'.format(float(json.loads(price.content)[self.quote]) * self.amount))} " \
-                             f"{self.quote}"
-                    self.clear()
-                    return answer
-                else:
-                    raise APIException('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
-            else:
-                answer = whitespace.join(self.error)
-                self.clear()
-                return answer
-        except APIException as e:
-            print(e)
+    def answer(self):
+        whitespace = '\n'
+        if len(self.error) == 0:
+            answer = self.get_price(self.base, self.quote, self.amount)
+            self.clear()
+            return answer
+        else:
+            answer = whitespace.join(self.error)
+            self.clear()
+            return answer
 
     @property
     def set_base(self):
@@ -121,6 +112,20 @@ class Currency:
         self.quote = None
         self.amount = 1
         self.error = []
+
+    @staticmethod
+    def get_price(base, quote, amount):
+        try:
+            price = requests.get(
+                f'https://min-api.cryptocompare.com/data/price?fsym={base}&tsyms={quote}')
+            if price.status_code == 200:
+                answer = f"{str('{:.2f}'.format(float(json.loads(price.content)[quote]) * amount))} " \
+                         f"{quote}"
+                return answer
+            else:
+                raise APIException('Что-то наши аналитики не отвечают, может устали, попробуйте позже)))')
+        except APIException as e:
+            print(e)
 
 
 class APIException(Exception):
