@@ -5,8 +5,11 @@ import json
 import re
 import os
 import sys
+import pyodbc
+from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.apihelper import ApiTelegramException
+load_dotenv()
 
 
 class BotTelegramCurrency(telebot.TeleBot):
@@ -23,15 +26,16 @@ class BotTelegramCurrency(telebot.TeleBot):
                             "9": "/9", "0": "/0"}
         self.data = Currency()
         self.list_currency = []
+        self.conn = None
 
         @self.message_handler(commands=['start', 'help'])
         def send_welcome(message):
             self.previous_message = message
             whitespace = '\n'
             self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
-                              f"Привет, {self.previous_message.from_user.first_name}, "
-                              f"меня зовут Виктор Россвикович!{whitespace}"
-                              f"Выберете, что Вас интересует: ")
+                              text_message=self.format_text(f"Привет, {self.previous_message.from_user.first_name}, "
+                                                            f"меня зовут Виктор Россвикович!{whitespace}"
+                                                            f"Выберете, что Вас интересует: "))
 
         @self.callback_query_handler(func=lambda call: True)
         def callback_inline(call):
@@ -39,9 +43,9 @@ class BotTelegramCurrency(telebot.TeleBot):
             if call.message:
                 if call.data == "/Новости":
                     self.previous_message = call.message
-                    self.show_message_with_image('https://www.rossvik.moscow/upload/iblock/bf1/oeomn7el57813mqkkz5fxg5p9ue7dvdy/PGA-4500.jpg https://www.rossvik.moscow/upload/iblock/be2/mvmwacgappw4lbt4rcn8rlr64cynek9m/banner-gaykovert-500-na-500.jpg',
+                    self.show_message_with_image(self.execute_sql(),
                                                  ["Меню"], 1,
-                                                 f"Ближайшие поступления на склад 24.01.2024:{whitespace}"
+                                                 f"{self.format_text('Ближайшие поступления на склад 24.01.2024:')}{whitespace}"
                                                  f"•	Автоподъемник двухстоечный ROSSVIK V2-4L г/п 4.0т, 380В, "
                                                  f"электрогидравлический с верхней синхронизацией{whitespace}"
                                                  f"•	Станок балансировочный ROSSVIK VT-63, 220В (LCD, лазер, эл. линейка, "
@@ -78,7 +82,7 @@ class BotTelegramCurrency(telebot.TeleBot):
                     self.list_currency = []
                     self.previous_message = call.message
                     self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
-                                      f"Выберете, что Вас интересует: ")
+                                      text_message=self.format_text(f"Выберете, что Вас интересует: "))
                 elif call.data == "/Курсы валют":
                     self.selected_base = False
                     self.selected_amount = None
@@ -89,7 +93,8 @@ class BotTelegramCurrency(telebot.TeleBot):
                         list_currency.append(value)
                         self.list_currency.append("/" + value)
                     self.show_message(list_currency, 2,
-                                      f"Выберете валюту, курс которой хотите узнать:{whitespace}",
+                                      text_message=f"{self.format_text('Выберете валюту, курс которой хотите узнать:')}"
+                                                   f"{whitespace}",
                                       return_button="Назад")
                 elif call.data in self.list_currency:
                     self.previous_message = call.message
@@ -102,33 +107,35 @@ class BotTelegramCurrency(telebot.TeleBot):
                     if self.selected_base:
                         self.data.set_quote = call.data
                         self.show_message(self.list_amount.keys(), 3,
-                                          f"Выберете количество валюты:{whitespace}",
+                                          text_message=f"{self.format_text('Выберете количество валюты:')}"
+                                                       f"{whitespace}",
                                           return_button="Назад")
                     else:
                         self.data.set_base = call.data
                         self.selected_base = True
                         self.show_message(list_currency, 2,
-                                          f"Выберете валюту, в которой показать курс:{whitespace}",
+                                          text_message=f"{self.format_text('Выберете валюту, в которой показать курс:')}"
+                                                       f"{whitespace}",
                                           return_button="Назад")
                 elif call.data in self.list_amount.values():
                     self.previous_message = call.message
                     if self.selected_amount:
                         self.selected_amount = str(self.selected_amount) + "".join(call.data.split("/"))
                         self.show_message(self.list_amount.keys(), 3,
-                                          f"{self.data.base} к {self.data.quote} х {self.selected_amount}",
+                                          text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
                                           return_button="=")
                     else:
                         self.selected_amount = "".join(call.data.split("/"))
                         self.show_message(self.list_amount.keys(), 3,
-                                          f"{self.data.base} к {self.data.quote} х {self.selected_amount}",
+                                          text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
                                           return_button="=")
                     self.data.set_amount = self.selected_amount
                 elif call.data == "/=":
                     self.previous_message = call.message
                     self.selected_base = False
                     self.show_message(["Меню"], 1,
-                                      f"{self.data.base} к {self.data.quote} х {self.selected_amount} = "
-                                      f"{self.data.answer}", return_button="Назад")
+                                      text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount} = {self.data.answer}')}",
+                                      return_button="Назад")
                 elif call.data == "Назад":
                     self.show_message(["Меню"], 1,
                                       f"{self.data.base} к {self.data.quote} х {self.selected_amount} = "
@@ -141,12 +148,33 @@ class BotTelegramCurrency(telebot.TeleBot):
     def run(self):
         try:
             self.infinity_polling(timeout=10, long_polling_timeout=5)
-        except (ConnectionError, ReadTimeout) as e:
+        except (ConnectionError, ReadTimeout, ApiTelegramException) as e:
             sys.stdout.flush()
             os.execv(sys.argv[0], sys.argv)
         else:
             self.infinity_polling(timeout=10, long_polling_timeout=5)
         self.polling(none_stop=True)
+
+    def execute_sql_news(self):
+        with self.conn.cursor() as curs:
+            sql_news = f"SELECT DISTINCT [news] FROM [Arrival] "
+            curs.execute(sql_news)
+            news_list = []
+            for item in curs.fetchall():
+                if item[0]:
+                    news_list.append(item[0])
+            return news_list
+
+    def execute_sql(self):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_sql_news()
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
 
     def clean_chat(self):
         if self.previous_message:
@@ -163,7 +191,7 @@ class BotTelegramCurrency(telebot.TeleBot):
 
     @staticmethod
     def format_text(text_message):
-        return f'<b>bold</b> {text_message}'
+        return f'<b>{text_message}</b>'
 
     @staticmethod
     def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
@@ -173,6 +201,11 @@ class BotTelegramCurrency(telebot.TeleBot):
         if footer_buttons:
             menu.append([footer_buttons])
         return menu
+
+    @staticmethod
+    # Функция для оборота переменных для запроса
+    def quote(request):
+        return f"'{request}'"
 
     def show_message(self, arr_button, column, text_message, return_button=None):
         try:
@@ -227,7 +260,7 @@ class BotTelegramCurrency(telebot.TeleBot):
         button_list = []
         for button in arr_button:
             button_list.append(types.InlineKeyboardButton(text=f"{button}", callback_data=f"/{button}"))
-        for number, url in enumerate(arr_url.split()):
+        for number, url in enumerate(arr_url):
             if number == 0:
                 media_group.append(types.InputMediaPhoto(media=url, caption=f"{heading_photo}", parse_mode='html'))
             else:
