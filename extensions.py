@@ -43,9 +43,10 @@ class BotTelegramCurrency(telebot.TeleBot):
             if call.message:
                 if call.data == "/Новости":
                     self.previous_message = call.message
-                    self.show_message_with_image(self.execute_sql(),
+                    date_news = f'Ближайшие поступления на склад {self.date_news()}:'
+                    self.show_message_with_image(self.arr_news(),
                                                  ["Меню"], 1,
-                                                 f"{self.format_text('Ближайшие поступления на склад 24.01.2024:')}{whitespace}"
+                                                 f"{self.format_text(date_news)}{whitespace}"
                                                  f"•	Автоподъемник двухстоечный ROSSVIK V2-4L г/п 4.0т, 380В, "
                                                  f"электрогидравлический с верхней синхронизацией{whitespace}"
                                                  f"•	Станок балансировочный ROSSVIK VT-63, 220В (LCD, лазер, эл. линейка, "
@@ -165,11 +166,29 @@ class BotTelegramCurrency(telebot.TeleBot):
                     news_list.append(item[0])
             return news_list
 
-    def execute_sql(self):
+    def arr_news(self):
         try:
             connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
             with pyodbc.connect(connect_string) as self.conn:
                 return self.execute_sql_news()
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
+
+    def execute_sql_date_news(self):
+        with self.conn.cursor() as curs:
+            sql_news = f"SELECT DISTINCT [date_arrival] FROM [Arrival] "
+            curs.execute(sql_news)
+            news_list = curs.fetchone()[0]
+            return news_list
+
+    def date_news(self):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_sql_date_news()
         except pyodbc.Error as error:
             print("Ошибка чтения данных из таблицы", error)
         finally:
