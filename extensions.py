@@ -24,6 +24,7 @@ class BotTelegramCurrency(telebot.TeleBot):
         self.selected_amount = None
         self.list_amount = {"1": "/1", "2": "/2", "3": "/3", "4": "/4", "5": "/5", "6": "/6", "7": "/7", "8": "/8",
                             "9": "/9", "0": "/0"}
+        self.list_emoji_numbers = {1: '1⃣', 2: '2⃣', 3: '3⃣', 4: '4⃣', 5: '5⃣', 6: '6⃣', 7: '7⃣', 8: 'м', 9: '9⃣', 10: '🔟'}
         self.data = Currency()
         self.list_currency = []
         self.conn = None
@@ -43,40 +44,13 @@ class BotTelegramCurrency(telebot.TeleBot):
             if call.message:
                 if call.data == "/Новости":
                     self.previous_message = call.message
-                    date_news = f'Ближайшие поступления на склад {self.date_news()}:'
-                    self.show_message_with_image(self.arr_news(),
+                    date_news = f'Ближайшие поступления на склад {self.date_news}🚛🚚🚢🛩🚀:'
+                    self.show_message_with_image(self.arr_news,
                                                  ["Меню"], 1,
                                                  f"{self.format_text(date_news)}{whitespace}"
-                                                 f"•	Автоподъемник двухстоечный ROSSVIK V2-4L г/п 4.0т, 380В, "
-                                                 f"электрогидравлический с верхней синхронизацией{whitespace}"
-                                                 f"•	Станок балансировочный ROSSVIK VT-63, 220В (LCD, лазер, эл. линейка, "
-                                                 f"УЗ) RAL3020 КРАСНЫЙ{whitespace}"
-                                                 f"•	Станок балансировочный ROSSVIK VT-63, 220В (LCD, лазер, эл. линейка, "
-                                                 f"УЗ) RAL7016 СЕРЫЙ{whitespace}"
-                                                 f"•	Домкрат подкатной S30-2EL, 15-30т, пневмогидравлический, 150-409мм, "
-                                                 f"38кг, (дополнительные удлинители){whitespace}"
-                                                 f"•	Домкрат подкатной S40-2EL, 20-40т, пневмогидравлический 150-409мм, "
-                                                 f"40кг (дополнительные удлинители){whitespace}"
-                                                 f"•	Гайковерт пневматический RT-5265 1/2', 850Нм, 2,6кг{whitespace}"
-                                                 f"•	Гайковерт пневматический RT-5880, 1', 4200Нм, 3500об/мин, 6,2бар, "
-                                                 f"18кг{whitespace}"
-                                                 f"•	Кран гаражный REMAX HJ2403, 2т. Цвет серый RAL 7040{whitespace}"
-                                                 f"•	TMHPC-4500C Аппарат высокого давления, 200бар, 14л/мин, 380В, 4,5кВт, "
-                                                 f"1450об/мин{whitespace}"
-                                                 f"•	TMHPC-7500C Аппарат высокого давления, 230бар, 16л/мин, 380В, 7,5кВт, "
-                                                 f"1450об/мин НОВИНКА!{whitespace}"
-                                                 f"•	Установка для диагности и УЗ очистки форсунок Thinkcar TK-IMT602{whitespace}"
-                                                 f"•	Пресс гидравлический 10т HJ0802, настольный Цвет серый RAL 7040{whitespace}"
-                                                 f"•	Пресс гидравлический 12т HJ0803, напольный. Цвет серый RAL 7040{whitespace}"
-                                                 f"•	Пресс гидравлический 20т HJ0805C, напольный, с педалью. "
-                                                 f"Цвет серый RAL 7040{whitespace}"
-                                                 f"•	Установка для обслуживания кондиционеров ROSSVIK АС1800{whitespace}"
-                                                 f"•	Станок шиномонтажный ROSSVIK V-524, п/автомат, до 24', "
-                                                 f"380В Цвет синий RAL5005{whitespace}"
-                                                 f"•	Станок шиномонтажный ROSSVIK V-624, автомат, до 24', "
-                                                 f"380В Цвет синий RAL5005{whitespace}",
+                                                 f"{whitespace.join(self.arr_arrival)}",
                                                  heading_photo=self.format_text(
-                                                     "Новости Московского подразделения Россвик"))
+                                                     "Новости Московского подразделения Россвик🔥⚡📊"))
                 elif call.data == "/Меню":
                     self.selected_base = False
                     self.selected_amount = None
@@ -108,28 +82,25 @@ class BotTelegramCurrency(telebot.TeleBot):
                     if self.selected_base:
                         self.data.set_quote = call.data
                         self.show_message(self.list_amount.keys(), 3,
-                                          text_message=f"{self.format_text('Выберете количество валюты:')}"
-                                                       f"{whitespace}",
-                                          return_button="Назад")
+                                          f"{self.format_text('Выберете количество валюты:')}{whitespace}", "Назад")
                     else:
                         self.data.set_base = call.data
                         self.selected_base = True
                         self.show_message(list_currency, 2,
-                                          text_message=f"{self.format_text('Выберете валюту, в которой показать курс:')}"
-                                                       f"{whitespace}",
-                                          return_button="Назад")
+                                          f"{self.format_text('Выберете валюту, в которой показать курс:')}{whitespace}",
+                                          "Назад")
                 elif call.data in self.list_amount.values():
                     self.previous_message = call.message
                     if self.selected_amount:
                         self.selected_amount = str(self.selected_amount) + "".join(call.data.split("/"))
                         self.show_message(self.list_amount.keys(), 3,
-                                          text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
-                                          return_button="=")
+                                          f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
+                                          "=")
                     else:
                         self.selected_amount = "".join(call.data.split("/"))
                         self.show_message(self.list_amount.keys(), 3,
-                                          text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
-                                          return_button="=")
+                                          f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
+                                          "=")
                     self.data.set_amount = self.selected_amount
                 elif call.data == "/=":
                     self.previous_message = call.message
@@ -166,6 +137,7 @@ class BotTelegramCurrency(telebot.TeleBot):
                     news_list.append(item[0])
             return news_list
 
+    @property
     def arr_news(self):
         try:
             connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
@@ -179,11 +151,12 @@ class BotTelegramCurrency(telebot.TeleBot):
 
     def execute_sql_date_news(self):
         with self.conn.cursor() as curs:
-            sql_news = f"SELECT DISTINCT [date_arrival] FROM [Arrival] "
-            curs.execute(sql_news)
-            news_list = curs.fetchone()[0]
-            return news_list
+            sql_date = f"SELECT DISTINCT [date_arrival] FROM [Arrival] "
+            curs.execute(sql_date)
+            news_date = curs.fetchone()[0]
+            return news_date
 
+    @property
     def date_news(self):
         try:
             connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
@@ -195,18 +168,48 @@ class BotTelegramCurrency(telebot.TeleBot):
             if self.conn:
                 self.conn.close()
 
+    def execute_sql_arrival(self):
+        with self.conn.cursor() as curs:
+            sql_arrival = f"SELECT DISTINCT [description] FROM [Arrival] "
+            curs.execute(sql_arrival)
+            arrival_list = []
+            i = 1
+            for item in curs.fetchall():
+                if item[0]:
+                    arrival_list.append(f'{self.list_emoji_numbers[i]} {item[0]}')
+                    i += 1
+            return arrival_list
+
+    @property
+    def arr_arrival(self):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_sql_arrival()
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
+
     def clean_chat(self):
-        if self.previous_message:
-            self.delete_message(self.previous_message.chat.id, self.previous_message.id)
-            self.previous_message = None
+        try:
+            if self.previous_message:
+                self.delete_message(self.previous_message.chat.id, self.previous_message.id)
+                self.previous_message = None
+        except ApiTelegramException as e:
+            print(e)
 
     def clean_chat_photo(self):
-        if self.list_message_photo:
-            list_photo = []
-            for message_item in self.list_message_photo:
-                list_photo.append(message_item.id)
-            self.delete_messages(self.list_message_photo[0].chat.id, list_photo)
-            self.list_message_photo = None
+        try:
+            if self.list_message_photo:
+                list_photo = []
+                for message_item in self.list_message_photo:
+                    list_photo.append(message_item.id)
+                self.delete_messages(self.list_message_photo[0].chat.id, list_photo)
+                self.list_message_photo = None
+        except ApiTelegramException as e:
+            print(e)
 
     @staticmethod
     def format_text(text_message):
@@ -250,7 +253,8 @@ class BotTelegramCurrency(telebot.TeleBot):
             else:
                 if return_button:
                     footer = types.InlineKeyboardButton(text=f"{return_button}", callback_data=f"/{return_button}")
-                    self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column, footer_buttons=footer))
+                    self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column,
+                                                                               footer_buttons=footer))
                     self.current_message = self.send_message(chat_id=self.previous_message.chat.id,
                                                              reply_to_message_id=self.previous_message.id,
                                                              text=f"{text_message}", reply_markup=self.keyboard,
