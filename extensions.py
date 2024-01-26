@@ -337,8 +337,15 @@ class BotTelegramCurrency(telebot.TeleBot):
 
     def clean_chat_with_time(self):
         try:
+            if self.list_message_photo:
+                list_photo = []
+                for message_item in self.list_message_photo:
+                    list_photo.append(message_item.id)
+                self.delete_messages(self.list_message_photo[0].chat.id, list_photo)
+                self.list_message_photo = None
             if self.timer_clean_message:
                 self.delete_message(self.timer_clean_message.chat.id, self.timer_clean_message.id)
+            self.timer_clean_message = None
         except ApiTelegramException as e:
             print(e)
 
@@ -462,7 +469,6 @@ class TimerClean:
             self.t.start()
 
     def clean_chat(self):
-        print('Очистка')
         self.parent.clean_chat_with_time()
         self.clean_timer()
 
