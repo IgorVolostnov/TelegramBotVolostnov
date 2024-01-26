@@ -1,15 +1,20 @@
+import logging
 import telebot
-from telebot import types
 import requests
 import json
 import re
 import os
 import sys
 import pyodbc
+from threading import Timer
+from telebot import types
 from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.apihelper import ApiTelegramException
+from urllib3.exceptions import ReadTimeoutError
+
 load_dotenv()
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 
 class BotTelegramCurrency(telebot.TeleBot):
@@ -20,112 +25,138 @@ class BotTelegramCurrency(telebot.TeleBot):
         self.previous_message = None
         self.current_message = None
         self.keyboard = None
-        self.selected_base = False
-        self.selected_amount = None
-        self.list_amount = {"1": "/1", "2": "/2", "3": "/3", "4": "/4", "5": "/5", "6": "/6", "7": "/7", "8": "/8",
-                            "9": "/9", "0": "/0"}
-        self.list_emoji_numbers = {1: '1⃣', 2: '2⃣', 3: '3⃣', 4: '4⃣', 5: '5⃣', 6: '6⃣', 7: '7⃣', 8: 'м', 9: '9⃣', 10: '🔟'}
+        self.list_amount = {"/1": "1", "/2": "2", "/3": "3", "/4": "4", "/5": "5", "/6": "6", "/7": "7", "/8": "8",
+                            "/9": "9", "/0": "0"}
+        self.list_emoji_numbers = {1: '1⃣', 2: '2⃣', 3: '3⃣', 4: '4⃣', 5: '5⃣', 6: '6⃣', 7: '7⃣', 8: 'м', 9: '9⃣',
+                                   10: '🔟'}
         self.data = Currency()
-        self.list_currency = []
+        self.list_currency = {}
+        self.history = []
+        self.timer_clean = TimerClean()
+        self.timer_clean.parent = self
+        self.timer_clean_message = None
         self.conn = None
 
         @self.message_handler(commands=['start', 'help'])
         def send_welcome(message):
-            self.previous_message = message
-            whitespace = '\n'
-            self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
-                              text_message=self.format_text(f"Привет, {self.previous_message.from_user.first_name}, "
-                                                            f"меня зовут Виктор Россвикович!{whitespace}"
-                                                            f"Выберете, что Вас интересует: "))
+            if message:
+                self.timer_clean.start()
+                self.previous_message = message
+                whitespace = '\n'
+                name_user = f'{self.previous_message.from_user.first_name} {self.previous_message.from_user.last_name}'
+                self.timer_clean_message = self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
+                                                             text_message=self.format_text(f"Привет {name_user} , "
+                                                                                           f"меня зовут Виктор "
+                                                                                           f"Россвикович!{whitespace}"
+                                                                                           f"Выберете, "
+                                                                                           f"что Вас интересует: "))
+                self.delete_message(self.previous_message.chat.id, self.previous_message.id)
+            else:
+                pass
 
         @self.callback_query_handler(func=lambda call: True)
         def callback_inline(call):
-            whitespace = '\n'
             if call.message:
-                if call.data == "/Новости":
-                    self.previous_message = call.message
-                    date_news = f'Ближайшие поступления на склад {self.date_news}🚛🚚🚢🛩🚀:'
-                    self.show_message_with_image(self.arr_news,
-                                                 ["Меню"], 1,
-                                                 f"{self.format_text(date_news)}{whitespace}"
-                                                 f"{whitespace.join(self.arr_arrival)}",
-                                                 heading_photo=self.format_text(
-                                                     "Новости Московского подразделения Россвик🔥⚡📊"))
-                elif call.data == "/Меню":
-                    self.selected_base = False
-                    self.selected_amount = None
-                    self.list_currency = []
-                    self.previous_message = call.message
-                    self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
-                                      text_message=self.format_text(f"Выберете, что Вас интересует: "))
-                elif call.data == "/Курсы валют":
-                    self.selected_base = False
-                    self.selected_amount = None
-                    self.list_currency = []
-                    self.previous_message = call.message
-                    list_currency = []
-                    for value in self.data.arr_currency.values():
-                        list_currency.append(value)
-                        self.list_currency.append("/" + value)
-                    self.show_message(list_currency, 2,
-                                      text_message=f"{self.format_text('Выберете валюту, курс которой хотите узнать:')}"
-                                                   f"{whitespace}",
-                                      return_button="Назад")
-                elif call.data in self.list_currency:
-                    self.previous_message = call.message
-                    list_currency = []
-                    for value in self.data.arr_currency.values():
-                        if value == call.data:
-                            list_currency.append(self.format_text(value))
-                        else:
-                            list_currency.append(value)
-                    if self.selected_base:
-                        self.data.set_quote = call.data
-                        self.show_message(self.list_amount.keys(), 3,
-                                          f"{self.format_text('Выберете количество валюты:')}{whitespace}", "Назад")
-                    else:
-                        self.data.set_base = call.data
-                        self.selected_base = True
-                        self.show_message(list_currency, 2,
-                                          f"{self.format_text('Выберете валюту, в которой показать курс:')}{whitespace}",
-                                          "Назад")
-                elif call.data in self.list_amount.values():
-                    self.previous_message = call.message
-                    if self.selected_amount:
-                        self.selected_amount = str(self.selected_amount) + "".join(call.data.split("/"))
-                        self.show_message(self.list_amount.keys(), 3,
-                                          f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
-                                          "=")
-                    else:
-                        self.selected_amount = "".join(call.data.split("/"))
-                        self.show_message(self.list_amount.keys(), 3,
-                                          f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount}')}",
-                                          "=")
-                    self.data.set_amount = self.selected_amount
-                elif call.data == "/=":
-                    self.previous_message = call.message
-                    self.selected_base = False
-                    self.show_message(["Меню"], 1,
-                                      text_message=f"{self.format_text(f'{self.data.base} к {self.data.quote} х {self.selected_amount} = {self.data.answer}')}",
-                                      return_button="Назад")
-                elif call.data == "Назад":
-                    self.show_message(["Меню"], 1,
-                                      f"{self.data.base} к {self.data.quote} х {self.selected_amount} = "
-                                      f"{self.data.answer}", return_button="Назад")
-                else:
-                    pass
+                self.timer_clean.start()
+                self.timer_clean_message = self.select_message(call.data, call.message)
             else:
                 pass
 
     def run(self):
         try:
             self.infinity_polling(timeout=10, long_polling_timeout=5)
-        except (ConnectionError, ReadTimeout, ApiTelegramException) as e:
+        except (ConnectionError, ReadTimeout, ApiTelegramException, ConnectionResetError, ReadTimeoutError) as e:
             sys.stdout.flush()
             os.execv(sys.argv[0], sys.argv)
         else:
             self.infinity_polling(timeout=10, long_polling_timeout=5)
         self.polling(none_stop=True)
+
+    def select_message(self, text_message, item_message):
+        if text_message == "/Новости":
+            return self.news(item_message)
+        elif text_message == "/Меню":
+            return self.menu(item_message)
+        elif text_message == "/Курсы валют":
+            return self.exchange_rate(text_message, item_message)
+        elif text_message in self.list_currency.values() and len(self.history) == 1:
+            return self.select_base(text_message, item_message)
+        elif text_message in self.list_currency.values() and len(self.history) == 2:
+            return self.select_quote(text_message, item_message)
+        elif text_message in self.list_amount.keys():
+            return self.select_amount(text_message, item_message)
+        elif text_message == "/=":
+            return self.total(text_message, item_message)
+        elif text_message == "/Назад":
+            self.history.pop()
+            current = self.history.pop()
+            self.select_message(current, item_message)
+        else:
+            return None
+
+    def menu(self, current_message):
+        self.history = []
+        self.list_currency = {}
+        self.previous_message = current_message
+        return self.show_message(["Новости", "Курсы валют", "Каталог"], 2,
+                                 text_message=self.format_text(f"Выберете, что Вас интересует: "))
+
+    def news(self, current_message):
+        whitespace = '\n'
+        self.previous_message = current_message
+        date_news = f'Ближайшие поступления на склад {self.date_news}🚛🚢🛩:'
+        return self.show_message_with_image(self.arr_news,
+                                            ["Меню"], 1,
+                                            f"{self.format_text(date_news)}{whitespace}"
+                                            f"{whitespace.join(self.arr_arrival)}",
+                                            heading_photo=self.format_text(
+                                                "Новости Московского подразделения Россвик🔥⚡📊"))
+
+    def exchange_rate(self, current_history, current_message):
+        whitespace = '\n'
+        self.history.append(current_history)
+        self.list_currency = {}
+        self.previous_message = current_message
+        for value in self.data.arr_currency.values():
+            self.list_currency[value] = ("/" + value)
+        return self.show_message(self.list_currency.keys(), 2,
+                                 text_message=f"{self.format_text('Выберете валюту, курс которой хотите узнать:')}"
+                                              f"{whitespace}",
+                                 return_button=["Меню"])
+
+    def select_base(self, current_history, current_message):
+        whitespace = '\n'
+        self.history.append(current_history)
+        self.previous_message = current_message
+        self.data.set_base = current_history
+        return self.show_message(self.list_currency.keys(), 2,
+                                 f"{self.format_text('Выберете валюту, в которой показать курс:')}{whitespace}",
+                                 ["Назад"])
+
+    def select_quote(self, current_history, current_message):
+        whitespace = '\n'
+        self.history.append(current_history)
+        self.previous_message = current_message
+        self.data.set_quote = current_history
+        return self.show_message(self.list_amount.values(), 3,
+                                 f"{self.format_text('Выберете количество валюты:')}{whitespace}", ["Назад"])
+
+    def select_amount(self, current_history, current_message):
+        self.history.append(current_history)
+        self.previous_message = current_message
+        selected_amount = ''
+        for i in range(3, len(self.history)):
+            selected_amount += self.list_amount[self.history[i]]
+        self.data.set_amount = selected_amount
+        return self.show_message(self.list_amount.values(), 3,
+                                 f"{self.format_text(f'{self.data.base} в {self.data.quote} х {self.data.amount}')}",
+                                 ["=", "Назад"])
+
+    def total(self, current_history, current_message):
+        self.history.append(current_history)
+        self.previous_message = current_message
+        current_text = f'{self.data.base} к {self.data.quote} х {self.data.amount} = {self.data.answer}'
+        return self.show_message(["Меню"], 1, text_message=self.format_text(current_text), return_button=["Назад"])
 
     def execute_sql_news(self):
         with self.conn.cursor() as curs:
@@ -211,24 +242,6 @@ class BotTelegramCurrency(telebot.TeleBot):
         except ApiTelegramException as e:
             print(e)
 
-    @staticmethod
-    def format_text(text_message):
-        return f'<b>{text_message}</b>'
-
-    @staticmethod
-    def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
-        menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
-        if header_buttons:
-            menu.insert(0, [header_buttons])
-        if footer_buttons:
-            menu.append([footer_buttons])
-        return menu
-
-    @staticmethod
-    # Функция для оборота переменных для запроса
-    def quote(request):
-        return f"'{request}'"
-
     def show_message(self, arr_button, column, text_message, return_button=None):
         try:
             button_list = []
@@ -236,13 +249,17 @@ class BotTelegramCurrency(telebot.TeleBot):
                 button_list.append(types.InlineKeyboardButton(text=f"{button}", callback_data=f"/{button}"))
             if self.keyboard:
                 if return_button:
-                    footer = types.InlineKeyboardButton(text=f"{return_button}", callback_data=f"/{return_button}")
-                    self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column, footer_buttons=footer))
+                    footer = []
+                    for button_ in return_button:
+                        footer.append(types.InlineKeyboardButton(text=f"{button_}", callback_data=f"/{button_}"))
+                    self.keyboard = types.InlineKeyboardMarkup(
+                        self.build_menu(button_list, column, footer_buttons=footer))
                     self.current_message = self.edit_message_text(chat_id=self.previous_message.chat.id,
                                                                   message_id=self.previous_message.id,
                                                                   text=f"{text_message}", reply_markup=self.keyboard,
                                                                   parse_mode='html')
                     self.clean_chat_photo()
+                    return self.current_message
                 else:
                     self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column))
                     self.current_message = self.edit_message_text(chat_id=self.previous_message.chat.id,
@@ -250,16 +267,20 @@ class BotTelegramCurrency(telebot.TeleBot):
                                                                   text=f"{text_message}", reply_markup=self.keyboard,
                                                                   parse_mode='html')
                     self.clean_chat_photo()
+                    return self.current_message
             else:
                 if return_button:
-                    footer = types.InlineKeyboardButton(text=f"{return_button}", callback_data=f"/{return_button}")
-                    self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column,
-                                                                               footer_buttons=footer))
+                    footer = []
+                    for button_ in return_button:
+                        footer.append(types.InlineKeyboardButton(text=f"{button_}", callback_data=f"/{button_}"))
+                    self.keyboard = types.InlineKeyboardMarkup(
+                        self.build_menu(button_list, column, footer_buttons=footer))
                     self.current_message = self.send_message(chat_id=self.previous_message.chat.id,
                                                              reply_to_message_id=self.previous_message.id,
                                                              text=f"{text_message}", reply_markup=self.keyboard,
                                                              parse_mode='html')
                     self.clean_chat_photo()
+                    return self.current_message
                 else:
                     self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column))
                     self.current_message = self.send_message(chat_id=self.previous_message.chat.id,
@@ -267,6 +288,7 @@ class BotTelegramCurrency(telebot.TeleBot):
                                                              text=f"{text_message}", reply_markup=self.keyboard,
                                                              parse_mode='html')
                     self.clean_chat_photo()
+                    return self.current_message
         except ApiTelegramException as e:
             button_list = []
             for button in arr_button:
@@ -277,6 +299,7 @@ class BotTelegramCurrency(telebot.TeleBot):
                                                      text=f"{text_message}", reply_markup=self.keyboard,
                                                      parse_mode='html')
             self.clean_chat_photo()
+            return self.current_message
 
     def show_message_with_image(self, arr_url, arr_button, column, text_message, heading_photo, return_button=None):
         media_group = []
@@ -299,6 +322,7 @@ class BotTelegramCurrency(telebot.TeleBot):
                                                      reply_to_message_id=self.list_message_photo[0].id,
                                                      text=f"{text_message}", reply_markup=self.keyboard,
                                                      parse_mode='html')
+            return self.current_message
         else:
             self.keyboard = types.InlineKeyboardMarkup(self.build_menu(button_list, column))
             self.list_message_photo = self.send_media_group(chat_id=self.previous_message.chat.id,
@@ -309,6 +333,33 @@ class BotTelegramCurrency(telebot.TeleBot):
                                                      reply_to_message_id=self.list_message_photo[0].id,
                                                      text=f"{text_message}", reply_markup=self.keyboard,
                                                      parse_mode='html')
+            return self.current_message
+
+    def clean_chat_with_time(self):
+        try:
+            if self.timer_clean_message:
+                self.delete_message(self.timer_clean_message.chat.id, self.timer_clean_message.id)
+        except ApiTelegramException as e:
+            print(e)
+
+    @staticmethod
+    def format_text(text_message):
+        return f'<b>{text_message}</b>'
+
+    @staticmethod
+    def build_menu(buttons, n_cols, header_buttons=None, footer_buttons=None):
+        menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
+        if header_buttons:
+            menu.insert(0, [header_buttons])
+        if footer_buttons:
+            for item in footer_buttons:
+                menu.append([item])
+        return menu
+
+    @staticmethod
+    # Функция для оборота переменных для запроса
+    def quote(request):
+        return f"'{request}'"
 
 
 class Currency:
@@ -325,7 +376,6 @@ class Currency:
         whitespace = '\n'
         if len(self.error) == 0:
             answer = self.get_price(self.base, self.quote, self.amount)
-            self.clear()
             return answer
         else:
             answer = whitespace.join(self.error)
@@ -396,6 +446,30 @@ class Currency:
             print(e)
 
 
+class TimerClean:
+    def __init__(self):
+        self._clean_time = 15
+        self.t = None
+        self.parent = None
+
+    def start(self):
+        if self.t is not None:
+            self.t.cancel()
+            self.t = Timer(self._clean_time, self.clean_chat)
+            self.t.start()
+        else:
+            self.t = Timer(self._clean_time, self.clean_chat)
+            self.t.start()
+
+    def clean_chat(self):
+        print('Очистка')
+        self.parent.clean_chat_with_time()
+        self.clean_timer()
+
+    def clean_timer(self):
+        self.t = None
+
+
 class APIException(Exception):
     def __init__(self, *args):
         if args:
@@ -408,3 +482,7 @@ class APIException(Exception):
             return 'Ниче не понял..., {0} '.format(self.message)
         else:
             return 'Что-то я летаю в облаках, повторите, пожалуйста!'
+
+
+class TimerError(Exception):
+    """Пользовательское исключение, используемое для сообщения об ошибках при использовании класса Timer"""
