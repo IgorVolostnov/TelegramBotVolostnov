@@ -92,6 +92,8 @@ class BotTelegramCurrency(telebot.TeleBot):
             return self.group(self.dict_prices_for_callback[text_message], item_message)
         elif text_message in self.dict_groups_for_callback.keys():
             return self.nomenclature(self.dict_groups_for_callback[text_message], item_message)
+        elif text_message in self.dict_nomenclatures_for_callback.keys():
+            return self.description(self.dict_nomenclatures_for_callback[text_message], item_message)
         elif text_message in self.list_currency.values() and len(self.history) == 1:
             return self.select_base(text_message, item_message)
         elif text_message in self.list_currency.values() and len(self.history) == 2:
@@ -204,6 +206,24 @@ class BotTelegramCurrency(telebot.TeleBot):
         return self.show_message(self.arr_nomenclature(current_history), 2, text_message=self.format_text(current_text),
                                  return_button=["Назад"])
 
+    def description(self, current_history, current_message):
+        whitespace = '\n'
+        self.history.append("/" + current_history)
+        self.previous_message = current_message
+        data_nomenclature = self.arr_description(current_history)
+        if data_nomenclature[4] <= 0:
+            availability = "Нет на складе"
+        else:
+            availability = data_nomenclature[4]
+        info_nomenclature = f'Артикул: {self.format_text(data_nomenclature[1])}{whitespace}' \
+                            f'{self.format_text(data_nomenclature[2])}{whitespace}' \
+                            f'Цена: {self.format_text(data_nomenclature[3])} RUB{whitespace}' \
+                            f'Наличие: {self.format_text(availability)}{whitespace}'
+        description_text = f'{data_nomenclature[5]}{whitespace}' \
+                           f'{data_nomenclature[6]}'
+        return self.show_message_with_image(data_nomenclature[0], ["Назад"], 1, f"{description_text}",
+                                            heading_photo=info_nomenclature)
+
     def execute_price(self):
         with self.conn.cursor() as curs:
             sql_price = f"SELECT DISTINCT [Уровень1], [СортировкаУровень1] FROM [Nomenclature] "
@@ -285,7 +305,6 @@ class BotTelegramCurrency(telebot.TeleBot):
                 else:
                     self.list_nomenclatures_for_button[nomenclature[0]] = ("/" + nomenclature[0])
                     self.dict_nomenclatures_for_callback["/" + nomenclature[0]] = nomenclature[0]
-            print(self.dict_nomenclatures_for_callback)
             return self.list_nomenclatures_for_button
 
     def arr_nomenclature(self, item_group):
@@ -293,6 +312,32 @@ class BotTelegramCurrency(telebot.TeleBot):
             connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
             with pyodbc.connect(connect_string) as self.conn:
                 return self.execute_nomenclature(item_group)
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
+
+    def execute_description(self, data_nomenclature):
+        with self.conn.cursor() as curs:
+            sql_description = f"SELECT [Фото], [Артикул], [Наименование], [Розница], [Наличие], [Описание], " \
+                               f"[Характеристики], [СортировкаУровень3] " \
+                               f"FROM [Nomenclature] " \
+                               f"WHERE [Артикул] = {self.quote(data_nomenclature)} AND [Бренд] = 'ROSSVIK'"
+            curs.execute(sql_description)
+            languages_description = []
+            for number, item in enumerate(curs.fetchone()):
+                if number == 0:
+                    languages_description.append(item.split())
+                else:
+                    languages_description.append(item)
+            return languages_description
+
+    def arr_description(self, item_nomenclature):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_description(item_nomenclature)
         except pyodbc.Error as error:
             print("Ошибка чтения данных из таблицы", error)
         finally:
