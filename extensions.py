@@ -455,7 +455,7 @@ class Currency:
 
 class TimerClean:
     def __init__(self):
-        self._clean_time = 15
+        self._clean_time = 300
         self.t = None
         self.parent = None
 
