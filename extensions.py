@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.apihelper import ApiTelegramException
 from urllib3.exceptions import ReadTimeoutError
+from operator import itemgetter
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -35,6 +36,12 @@ class BotTelegramCurrency(telebot.TeleBot):
         self.timer_clean = TimerClean()
         self.timer_clean.parent = self
         self.timer_clean_message = None
+        self.list_prices_for_button = {}
+        self.dict_prices_for_callback = {}
+        self.list_groups_for_button = {}
+        self.dict_groups_for_callback = {}
+        self.list_nomenclatures_for_button = {}
+        self.dict_nomenclatures_for_callback = {}
         self.conn = None
 
         @self.message_handler(commands=['start', 'help'])
@@ -79,6 +86,12 @@ class BotTelegramCurrency(telebot.TeleBot):
             return self.menu(item_message)
         elif text_message == "/Курсы валют":
             return self.exchange_rate(text_message, item_message)
+        elif text_message == "/Каталог":
+            return self.catalog(text_message, item_message)
+        elif text_message in self.dict_prices_for_callback.keys():
+            return self.group(self.dict_prices_for_callback[text_message], item_message)
+        elif text_message in self.dict_groups_for_callback.keys():
+            return self.nomenclature(self.dict_groups_for_callback[text_message], item_message)
         elif text_message in self.list_currency.values() and len(self.history) == 1:
             return self.select_base(text_message, item_message)
         elif text_message in self.list_currency.values() and len(self.history) == 2:
@@ -157,6 +170,134 @@ class BotTelegramCurrency(telebot.TeleBot):
         self.previous_message = current_message
         current_text = f'{self.data.base} к {self.data.quote} х {self.data.amount} = {self.data.answer}'
         return self.show_message(["Меню"], 1, text_message=self.format_text(current_text), return_button=["Назад"])
+
+    def catalog(self, current_history, current_message):
+        self.list_prices_for_button = {}
+        self.dict_prices_for_callback = {}
+        self.history.append(current_history)
+        self.previous_message = current_message
+        current_text = f'Каталог товаров ROSSVIK 📖'
+        return self.show_message(self.arr_price, 1, text_message=self.format_text(current_text),
+                                 return_button=["Меню"])
+
+    def group(self, current_history, current_message):
+        self.list_groups_for_button = {}
+        self.dict_groups_for_callback = {}
+        if len(current_history) > 32:
+            self.history.append("/" + current_history[0:28] + '...')
+        else:
+            self.history.append("/" + current_history)
+        self.previous_message = current_message
+        current_text = current_history
+        return self.show_message(self.arr_group(current_history), 1, text_message=self.format_text(current_text),
+                                 return_button=["Назад"])
+
+    def nomenclature(self, current_history, current_message):
+        self.list_nomenclatures_for_button = {}
+        self.dict_nomenclatures_for_callback = {}
+        if len(current_history) > 32:
+            self.history.append("/" + current_history[0:28] + '...')
+        else:
+            self.history.append("/" + current_history)
+        self.previous_message = current_message
+        current_text = current_history
+        return self.show_message(self.arr_nomenclature(current_history), 2, text_message=self.format_text(current_text),
+                                 return_button=["Назад"])
+
+    def execute_price(self):
+        with self.conn.cursor() as curs:
+            sql_price = f"SELECT DISTINCT [Уровень1], [СортировкаУровень1] FROM [Nomenclature] "
+            curs.execute(sql_price)
+            languages_price = []
+            for item_cursor in curs.fetchall():
+                if item_cursor[0] == 'Нет в каталоге' or item_cursor[0] is None:
+                    continue
+                else:
+                    languages_price.append([item_cursor[0], item_cursor[1]])
+            for price in sorted(languages_price, key=itemgetter(1), reverse=False):
+                if len(price[0]) > 32:
+                    self.list_prices_for_button[price[0][0:28] + '...'] = "/" + price[0][0:28] + '...'
+                    self.dict_prices_for_callback["/" + price[0][0:28] + '...'] = price[0]
+                else:
+                    self.list_prices_for_button[price[0]] = ("/" + price[0])
+                    self.dict_prices_for_callback["/" + price[0]] = price[0]
+            return self.list_prices_for_button
+
+    @property
+    def arr_price(self):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_price()
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
+
+    def execute_group(self, data_price):
+        with self.conn.cursor() as curs:
+            sql_group = f"SELECT DISTINCT [Уровень2], [СортировкаУровень2] FROM [Nomenclature] " \
+                        f"WHERE [Уровень1] = {self.quote(data_price)}"
+            curs.execute(sql_group)
+            languages_group = []
+            for item_cursor in curs.fetchall():
+                if item_cursor[0] == 'Нет в каталоге' or item_cursor[0] is None:
+                    continue
+                else:
+                    languages_group.append([item_cursor[0], item_cursor[1]])
+            for group in sorted(languages_group, key=itemgetter(1), reverse=False):
+                if len(group[0]) > 32:
+                    self.list_groups_for_button[group[0][0:28] + '...'] = "/" + group[0][0:28] + '...'
+                    self.dict_groups_for_callback["/" + group[0][0:28] + '...'] = group[0]
+                else:
+                    self.list_groups_for_button[group[0]] = ("/" + group[0])
+                    self.dict_groups_for_callback["/" + group[0]] = group[0]
+            return self.list_groups_for_button
+
+    def arr_group(self, item_price):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_group(item_price)
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
+
+    def execute_nomenclature(self, data_group):
+        with self.conn.cursor() as curs:
+            sql_nomenclature = f"SELECT [Артикул], [СортировкаУровень3], [Кросс] FROM [Nomenclature] " \
+                               f"WHERE [Уровень2] = {self.quote(data_group)} AND [Бренд] = 'ROSSVIK'"
+            curs.execute(sql_nomenclature)
+            languages_nomenclature = []
+            for item in curs.fetchall():
+                if item[2] == 'Нет в каталоге' or item[2] is None:
+                    continue
+                else:
+                    languages_nomenclature.append([item[0], item[1]])
+            for nomenclature in sorted(languages_nomenclature, key=itemgetter(1), reverse=False):
+                if len(nomenclature[0]) > 32:
+                    self.list_nomenclatures_for_button[nomenclature[0][0:28] + '...'] = "/" + nomenclature[0][0:28] \
+                                                                                        + '...'
+                    self.dict_nomenclatures_for_callback["/" + nomenclature[0][0:28] + '...'] = nomenclature[0]
+                else:
+                    self.list_nomenclatures_for_button[nomenclature[0]] = ("/" + nomenclature[0])
+                    self.dict_nomenclatures_for_callback["/" + nomenclature[0]] = nomenclature[0]
+            print(self.dict_nomenclatures_for_callback)
+            return self.list_nomenclatures_for_button
+
+    def arr_nomenclature(self, item_group):
+        try:
+            connect_string = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=\\' + f'{os.getenv("CONNECTION")}'
+            with pyodbc.connect(connect_string) as self.conn:
+                return self.execute_nomenclature(item_group)
+        except pyodbc.Error as error:
+            print("Ошибка чтения данных из таблицы", error)
+        finally:
+            if self.conn:
+                self.conn.close()
 
     def execute_sql_news(self):
         with self.conn.cursor() as curs:
